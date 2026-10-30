@@ -21,16 +21,24 @@ Prompts:
 
 ## 3. How the Model Works  
 
-Explain your scoring approach in simple language.  
+The recommender works like a points game. You tell it what you are in the mood for, it gives every song in the catalog a score for how well it fits, and it shows you the highest scorers.
 
-Prompts:  
+**What it looks at in a song:** its mood (like "chill" or "happy"), its genre (like "lofi" or "pop"), and a few numbers describing how it sounds: energy, valence (how upbeat or gloomy it feels), tempo, danceability, and acousticness (how acoustic versus electronic it is).
 
-- What features of each song are used (genre, energy, mood, etc.)  
-- What user preferences are considered  
-- How does the model turn those into a score  
-- What changes did you make from the starter logic  
+**What you tell it:** your favorite mood and genre, plus how high or low you want each of those numbers to be. You can leave any of them out, and the recommender simply skips what you did not mention.
 
-Avoid code here. Pretend you are explaining the idea to a friend who does not program.
+**How a song earns points:**
+
+- **Mood match: up to 3 points.** The biggest prize, because mood describes what you want to hear right now. It is all or nothing: the song's mood either matches yours or it doesn't.
+- **Genre match: up to 2 points.** Also all or nothing, but worth less, since people will often enjoy a song outside their usual genre if the vibe is right.
+- **Energy: up to 1.5 points.** The closer the song's energy is to what you asked for, the more points it gets. A song that is spot on gets all 1.5, and one that is far off gets almost none.
+- **Valence, tempo, danceability and acousticness: up to 0.5 points each.** These work like energy (closer is better) but count for less.
+
+The most a song can score is 8.5 points. The points add up, and the songs are sorted from highest to lowest. The top few are shown along with the reasons, for example "Mood match (+3)", so you can see exactly why a song was picked.
+
+**A key idea:** for the number-based features, "closer to what you want" beats "higher is better". If you ask for calm music with an energy of 0.3, a song with 0.9 energy is penalized just as a song with 0.0 would be.
+
+**What changed from the starter code:** the starter had empty placeholders for loading songs, scoring them, and ranking them. I filled these in: the loader reads the song file and turns the numbers into real numbers, the scorer applies the point rules above and records a reason for each point earned, and the ranker scores every song and returns the best ones. I also chose the point values so that mood counts the most, followed by genre and energy, and the remaining features act as tie-breakers.
 
 ---
 
