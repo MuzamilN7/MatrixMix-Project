@@ -1,0 +1,54 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&display=swap');
+
+:root { --accent:#00ff9c; --dim:#0f4d3a; --ink:#c9f5e6; }
+
+html, body, [class*="st-"], .stApp { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+/* graph-paper background */
+.stApp {
+  background-color: #050b0a;
+  background-image:
+    linear-gradient(rgba(0,255,156,.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,255,156,.06) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+header[data-testid="stHeader"] { background: transparent; }
+
+/* title: MatrixMix wrapped in matrix brackets */
+.mm-title { display:flex; align-items:center; gap:.9rem; margin:.5rem 0 .2rem; }
+.mm-bracket { width:16px; height:84px; border:3px solid var(--accent); border-right:none; }
+.mm-bracket.r { border-right:3px solid var(--accent); border-left:none; }
+.mm-name { font-size:2.6rem; font-weight:800; letter-spacing:.04em; color:var(--accent);
+           text-shadow:0 0 14px rgba(0,255,156,.55); line-height:1.1; }
+.mm-name small { display:block; font-size:.8rem; font-weight:400; color:var(--ink); opacity:.75;
+                 letter-spacing:.02em; text-shadow:none; margin-top:.3rem; }
+.mm-eq { color:var(--ink); opacity:.6; font-size:.85rem; margin-bottom:1rem; }
+
+/* each recommendation card looks like a matrix cell with [ ] brackets */
+[class*="st-key-card_"] {
+  position:relative; padding:.9rem 1rem; margin-bottom:1rem;
+  background:
+    linear-gradient(var(--accent),var(--accent)) top left/14px 2px no-repeat,
+    linear-gradient(var(--accent),var(--accent)) top right/14px 2px no-repeat,
+    linear-gradient(var(--accent),var(--accent)) bottom left/14px 2px no-repeat,
+    linear-gradient(var(--accent),var(--accent)) bottom right/14px 2px no-repeat,
+    rgba(11,24,22,.85);
+  border-left:2px solid var(--accent); border-right:2px solid var(--accent);
+  transition: box-shadow .2s, transform .2s;
+}
+[class*="st-key-card_"]:hover { box-shadow:0 0 18px rgba(0,255,156,.3); transform:translateY(-2px); }
+[class*="st-key-card_"] img { border-radius:2px; filter:saturate(.9) contrast(1.05); }
+
+.mm-idx { color:var(--accent); font-size:.7rem; opacity:.8; }
+.mm-vec { font-size:.72rem; color:var(--ink); opacity:.8; white-space:nowrap; }
+.mm-sim { font-size:.8rem; color:var(--accent); font-weight:600; }
+
+/* inputs, buttons, progress */
+.stButton button { background:transparent; color:var(--accent); border:1px solid var(--accent); border-radius:2px; }
+.stButton button:hover { background:var(--accent); color:#050b0a; border-color:var(--accent); }
+.stTextInput input, .stSelectbox div[data-baseweb="select"] > div {
+  background:#0b1816; border:1px solid var(--dim); border-radius:2px; color:var(--ink);
+}
+.stProgress > div > div > div > div { background:var(--accent); }
+h2, h3 { color:var(--accent) !important; }
+hr { border-color:var(--dim) !important; }
