@@ -2,6 +2,7 @@
 
 Run:  streamlit run app.py
 """
+import os
 import re
 import sys
 from pathlib import Path
@@ -11,11 +12,42 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 from guardrails import clean_query, confidence, verify_results  # noqa: E402
-from mood import recommend_by_mood  # noqa: E402
+from llm_mood import MODEL, llm_available  # noqa: E402
+from mood_search import search_mood  # noqa: E402
 from similar import SongSimilarity  # noqa: E402
 
 st.set_page_config(page_title="MatrixMix", page_icon="🎵", layout="wide")
 st.markdown(f"<style>{(Path(__file__).parent / 'style.css').read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
+
+
+MAX_AI_REQUESTS_PER_SESSION = 20  # keeps a public deployment from running up the API quota
+
+
+def load_api_key() -> None:
+    """Make GROQ_API_KEY available from (in order): the environment, Streamlit secrets, or a local .env file."""
+    if os.environ.get("GROQ_API_KEY"):
+        return
+    try:
+        if "GROQ_API_KEY" in st.secrets:
+            os.environ["GROQ_API_KEY"] = str(st.secrets["GROQ_API_KEY"])
+            return
+    except Exception:  # no secrets file configured
+        pass
+    env_file = Path(__file__).parent / ".env"
+    if env_file.exists():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            name, _, value = line.partition("=")
+            if name.strip() == "GROQ_API_KEY" and value.strip():
+                os.environ["GROQ_API_KEY"] = value.strip().strip("\"'")
+
+
+load_api_key()
+
+
+@st.cache_data(ttl=300, show_spinner="Understanding your request...")
+def cached_mood_search(_cat, text: str, clean_only: bool, use_ai: bool):
+    """Cached so Streamlit reruns (e.g. clicking Preview) don't call the AI again for the same text."""
+    return search_mood(_cat, text, k=10, clean_only=clean_only, use_ai=use_ai)
 
 
 @st.cache_resource(show_spinner="Building similarity matrix...")
@@ -149,14 +181,35 @@ if mode == "A mood or vibe":
     st.caption("Describe what you want, e.g. *a chill song to play in a cafe*, *gym workout*, *sad rainy night*.")
     raw = st.text_input("What are you in the mood for?", placeholder="a chill song to play in a cafe")
     text = checked_input(raw) if raw else None
+    ai_ready = llm_available()
+    use_ai = st.checkbox(
+        "Use AI to understand my request",
+        value=ai_ready,
+        disabled=not ai_ready,
+        help=f"Uses Groq ({MODEL}). Falls back to keyword matching if the AI is unavailable."
+        if ai_ready else "No GROQ_API_KEY found, so keyword matching is used.",
+    )
     if text:
-        moods, recs = recommend_by_mood(model.cat, text, k=10, clean_only=clean_only)
-        if not moods:
+        seen = st.session_state.setdefault("ai_texts", set())
+        if use_ai and text not in seen and len(seen) >= MAX_AI_REQUESTS_PER_SESSION:
+            st.info("AI request limit for this session reached, so I'm using keyword matching.")
+            use_ai = False
+        result = cached_mood_search(model.cat, text, clean_only, use_ai)
+        if result.source == "ai":
+            seen.add(text)
+        if result.note:
+            st.info(result.note)
+        recs = result.recs
+        if not result.moods:
             st.warning("I didn't recognize a mood in that. Try words like chill, cafe, study, gym, party, sad, happy, road trip.")
         elif recs.empty:
             st.warning("No songs matched that mood with the current filters.")
         else:
-            st.write("Detected: " + ", ".join(f"**{m}**" for m in moods))
+            who = "AI understood this as" if result.source == "ai" else "Detected (keywords)"
+            st.write(f"{who}: " + ", ".join(f"**{m}**" for m in result.moods))
+            if result.source == "ai" and result.profile:
+                st.caption("Target: " + ", ".join(f"{k} {v:.2f}" if k != "tempo" else f"tempo {v:.0f} bpm"
+                                                  for k, v in result.profile.items()))
             if run_guardrails(recs, "mood"):
                 show_grid(recs, "mood")
     st.stop()

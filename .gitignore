@@ -16,3 +16,7 @@ venv/
 
 # Too large for GitHub (>100MB) and unused by the app
 data/musicoset_songfeatures/lyrics.csv
+
+# Secrets: never commit API keys
+.env
+.streamlit/secrets.toml

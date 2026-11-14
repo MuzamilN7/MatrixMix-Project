@@ -29,7 +29,9 @@ flowchart TD
         CAT["Catalog builder<br/>similar.py: merge + dedupe<br/>~21k songs"]
         RET["Retriever<br/>search song by title/artist"]
         SIM["Song recommender<br/>genre + artist + era + popularity<br/>similarity score"]
-        PARSE["Mood parser<br/>mood.py: keywords to<br/>target audio features"]
+        LLM["AI mood parser (optional)<br/>llm_mood.py: Groq LLM returns a<br/>structured mood profile (strict JSON)"]
+        VALID{"validate_profile()<br/>parse, type-check,<br/>clamp every number"}
+        PARSE["Keyword mood parser (fallback)<br/>mood.py: keywords to<br/>target audio features"]
         MOODREC["Mood recommender<br/>closeness to target features"]
         RULES["Rules: max 2 songs per artist,<br/>hide other versions of the seed song,<br/>drop explicit songs if filter is on"]
     end
@@ -56,8 +58,8 @@ flowchart TD
     subgraph CHECKS["Human + automated checks"]
         H1{{"HUMAN: user listens to preview,<br/>reads the 'why' line, judges the match"}}
         H2{{"HUMAN: developer reads the evaluation report<br/>and tunes weights / mood keywords"}}
-        T1["TEST: pytest (113 tests)<br/>parser, recommenders, guardrails,<br/>real-data behavior, negative controls"]
-        T2["EVAL: python evaluate.py (43 checks)<br/>sample songs + moods + guardrail cases,<br/>pass/fail report"]
+        T1["TEST: pytest (159 tests)<br/>parsers, recommenders, guardrails,<br/>AI path with a fake Groq client,<br/>real-data behavior, negative controls"]
+        T2["EVAL: python evaluate.py (48 checks)<br/>sample songs + moods + guardrail cases<br/>+ AI path (live Groq if key set),<br/>pass/fail report"]
     end
 
     D1 --> CAT
@@ -67,7 +69,11 @@ flowchart TD
     SONG --> CLEAN
     MOODQ --> CLEAN
     CLEAN -- "clean text" --> RET
-    CLEAN -- "clean text" --> PARSE
+    CLEAN -- "mood text, AI on + key set" --> LLM
+    CLEAN -- "mood text, AI off or no key" --> PARSE
+    LLM --> VALID
+    VALID -- "valid music request" --> MOODREC
+    VALID -- "bad reply, API error,<br/>timeout, or not music" --> PARSE
     RET --> SIM
     CAT --> RET
     CAT --> SIM
@@ -93,6 +99,7 @@ flowchart TD
     T1 -. "verifies" .-> CLEAN
     T1 -. "verifies" .-> SELF
     T1 -. "verifies" .-> RULES
+    T1 -. "verifies" .-> VALID
     T2 -. "runs real inputs through" .-> CLEAN
     T2 -. "checks" .-> TOP
     T2 -. "reports to" .-> H2

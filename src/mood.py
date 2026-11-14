@@ -92,13 +92,8 @@ def build_target(moods: list[str]) -> tuple[dict, list[str]]:
     return target, genres
 
 
-def recommend_by_mood(cat: pd.DataFrame, text: str, k: int = 10, clean_only: bool = False):
-    """Rank songs by closeness to the mood in `text`. Returns (moods, dataframe) — empty if no keyword matched."""
-    moods = parse_mood(text)
-    if not moods:
-        return moods, cat.iloc[0:0]
-
-    target, hints = build_target(moods)
+def rank_by_target(cat: pd.DataFrame, target: dict, hints: list[str], k: int = 10, clean_only: bool = False) -> pd.DataFrame:
+    """Rank songs by closeness to `target` audio features (shared by keyword and LLM profiles)."""
     has = cat["energy"].notna().values  # only songs with audio features
     score = np.zeros(len(cat))
     total = 0.0
@@ -133,4 +128,13 @@ def recommend_by_mood(cat: pd.DataFrame, text: str, k: int = 10, clean_only: boo
         + ("; fits genre" if hint_hit[i] else "")
         for i, r in zip(top, out.itertuples())
     ]
-    return moods, out
+    return out
+
+
+def recommend_by_mood(cat: pd.DataFrame, text: str, k: int = 10, clean_only: bool = False):
+    """Keyword mood search. Returns (moods, dataframe); the dataframe is empty if no keyword matched."""
+    moods = parse_mood(text)
+    if not moods:
+        return moods, cat.iloc[0:0]
+    target, hints = build_target(moods)
+    return moods, rank_by_target(cat, target, hints, k, clean_only)

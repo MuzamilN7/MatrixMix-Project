@@ -1,6 +1,6 @@
 # 🎵 MatrixMix
 
-**Give it a song or describe a vibe, and it returns the 10 closest songs, with album covers, a short reason for each pick, and a 10-second preview. Built-in guardrails and an evaluation script check that the results can be trusted.**
+**Give it a song or describe a vibe, and it returns the 10 closest songs, with album covers, a short reason for each pick, and a 10-second preview. An optional AI parser (Groq) understands free-text requests, and built-in guardrails plus an evaluation script check that the results can be trusted.**
 
 ## Original Project (Modules 1-3)
 
@@ -11,7 +11,7 @@ MatrixMix grew out of my **Music Recommender Simulation** (model name *VibeMatch
 **MatrixMix** scales that idea up to real data, a real interface and a reliability layer. It merges two datasets into a catalog of about 21,000 songs and offers two ways to find music:
 
 - **A song I like:** type a song, and get the 10 most similar songs.
-- **A mood or vibe:** type something like *"a chill song to play in a cafe"*, and get songs whose audio features fit that mood.
+- **A mood or vibe:** type something like *"a chill song to play in a cafe"* or *"a cozy bookshop afternoon"*, and get songs whose audio features fit that mood. With a Groq API key, an LLM understands any phrasing; without one, keyword matching handles 14 built-in moods.
 
 **Why it matters:** recommenders decide what people hear, so it is useful to build one where every ranking can be explained *and checked*. Every result shows *why* it was picked (shared genres, same era, or the exact energy / acousticness / tempo that matched), and every list is verified against the system's own rules before it is shown.
 
@@ -21,11 +21,12 @@ MatrixMix grew out of my **Music Recommender Simulation** (model name *VibeMatch
 |---|---|---|
 | Real-data catalog | `src/similar.py` | Merges Spotify top-1000 + MusicOSet metadata + audio features into ~21,000 songs |
 | Song-to-song recommender | `src/similar.py` | Finds the 10 closest songs by genre, artist, era and popularity |
-| Mood search (specialized behavior) | `src/mood.py` | Turns plain-English requests into audio-feature targets (14 moods, aliases, blended moods) |
+| Mood search, keyword mode | `src/mood.py` | Turns plain-English requests into audio-feature targets (14 moods, aliases, blended moods) |
+| **AI mood understanding (Groq LLM)** | `src/llm_mood.py`, `src/mood_search.py` | Sends the user's sentence to an LLM that returns a structured mood profile (strict JSON schema); the reply is validated and clamped, then ranked with the same engine. Falls back to keyword mode on any failure |
 | Streamlit UI | `app.py`, `style.css` | Matrix-themed site with album covers and 10-second previews |
 | **Guardrails** | `src/guardrails.py` | Input validation, an output self-check, a low-confidence warning, and an explicit-content filter |
-| **Evaluation harness** | `evaluate.py` | Runs 43 checks on sample inputs through the real system and reports pass/fail |
-| **Automated tests** | `tests/` | 113 pytest tests, including negative controls that prove the checks can fail |
+| **Evaluation harness** | `evaluate.py` | Runs 48 checks on sample inputs through the real system (plus live-Groq checks when a key is set) and reports pass/fail |
+| **Automated tests** | `tests/` | 159 pytest tests (the AI path uses a fake client, so no key is needed), including negative controls that prove the checks can fail |
 
 ## Architecture Overview
 
@@ -37,11 +38,12 @@ The full diagram is in [`diagram/system_diagram.mmd`](diagram/system_diagram.mmd
 4. **Process:**
    - *Retriever:* `search()` finds the song the user meant by title or artist.
    - *Song recommender:* scores every song against the seed by genre overlap (55%), era (20%), same artist (15%) and popularity (10%).
-   - *Mood parser + recommender (`src/mood.py`):* turns keywords into target audio features, then ranks songs by closeness to that target.
+   - *Mood understanding (`src/mood_search.py`):* if a Groq key is set, the **LLM** turns the sentence into target audio features (`src/llm_mood.py`); otherwise, or if the AI fails or says the text is not about music, the **keyword parser** (`src/mood.py`) does it. Either way, the same ranker scores songs by closeness to the target.
    - *Rules:* at most 2 songs per artist, other versions of the seed song are hidden, and explicit songs are removed when the filter is on.
-5. **Output guardrails (`verify_results`, `confidence`):** the list is self-checked (no duplicates, artist cap, scores in 0-1, sorted, explanations present, seed not repeated). If a rule is broken the list is **not shown**. If the matches are weak, a *low confidence* warning is shown.
-6. **Output:** the top 10 songs, each with a similarity score and a "why" line, an album cover (MusicOSet image, falling back to Spotify oEmbed), and a 10-second preview (iTunes Search API).
-7. **Human and testing checks:** the user listens to the preview and judges the match; the developer reads `evaluate.py` output and tunes weights and keywords; `pytest` and `evaluate.py` verify the code.
+5. **AI-output guardrail (`validate_profile`):** the LLM's reply is treated as untrusted. It is parsed, type-checked, and every number is clamped to its valid range; anything malformed is discarded and the app falls back to keywords.
+6. **Output guardrails (`verify_results`, `confidence`):** the list is self-checked (no duplicates, artist cap, scores in 0-1, sorted, explanations present, seed not repeated). If a rule is broken the list is **not shown**. If the matches are weak, a *low confidence* warning is shown.
+7. **Output:** the top 10 songs, each with a similarity score and a "why" line, an album cover (MusicOSet image, falling back to Spotify oEmbed), and a 10-second preview (iTunes Search API).
+8. **Human and testing checks:** the user listens to the preview and judges the match; the developer reads `evaluate.py` output and tunes weights and keywords; `pytest` and `evaluate.py` verify the code.
 
 ## Setup Instructions
 
@@ -71,17 +73,29 @@ The full diagram is in [`diagram/system_diagram.mmd`](diagram/system_diagram.mmd
    streamlit run app.py
    ```
    It opens at http://localhost:8501. The first load takes a few seconds while the catalog is built.
-6. **Run the automated tests (about 40 seconds):**
+6. **(Optional) Turn on the AI mood parser.** Get a free key at https://console.groq.com, then give it to the app in *one* of these ways (never commit it):
+   ```bash
+   # a) environment variable
+   export GROQ_API_KEY=your_key_here          # Mac or Linux
+   $env:GROQ_API_KEY = "your_key_here"        # Windows PowerShell
+
+   # b) a local .env file in the project folder (already git-ignored)
+   echo GROQ_API_KEY=your_key_here > .env
+
+   # c) Streamlit Cloud: add GROQ_API_KEY under the app's Secrets settings
+   ```
+   Restart the app. The *Use AI to understand my request* checkbox in mood mode turns on automatically. Without a key the checkbox is disabled and keyword matching is used, so everything else works either way.
+7. **Run the automated tests (about 40 seconds):**
    ```bash
    pytest
    ```
-   Expected result: `113 passed`.
-7. **Run the evaluation script (about 15 seconds):**
+   Expected result: `159 passed`.
+8. **Run the evaluation script (about 15 seconds):**
    ```bash
    python evaluate.py
    ```
-   Expected result: `43/43 checks passed`. The script exits with code 1 if any check fails.
-8. **(Optional) Run the original command-line recommender:**
+   Expected result: `48/48 checks passed`. If `GROQ_API_KEY` is set, it also makes a few live Groq calls and adds those checks. The script exits with code 1 if any check fails.
+9. **(Optional) Run the original command-line recommender:**
    ```bash
    python src/main.py
    ```
@@ -128,9 +142,24 @@ Detected mood: `workout` (target of roughly energy 0.90, acousticness 0.08, temp
 
 Running each input twice gives the same list, so the system is consistent.
 
+### 4. Mood mode with the AI parser: input `a cozy bookshop afternoon`
+
+The keyword parser alone does not know these words (`keywords only -> no mood recognized`). With the AI parser on, the LLM turns the sentence into a profile and the same ranker finds songs. *The output below was produced by the real catalog and ranker, with the LLM's reply simulated by a fake client (no API key was available when this README was written).*
+
+```text
+source: ai | understood as: ['cozy bookshop']
+target: energy 0.30, valence 0.55, acousticness 0.70, danceability 0.50, instrumentalness 0.20, tempo 90 bpm
+1. It's Over                      Roy Orbison          sim=0.93  energy 0.32, acoustic 0.74, tempo 90 bpm; fits genre
+2. Honey                          Bobby Goldsboro      sim=0.92  energy 0.28, acoustic 0.67, tempo 93 bpm; fits genre
+3. Could I Have This Dance        Anne Murray          sim=0.92  energy 0.34, acoustic 0.78, tempo 87 bpm; fits genre
+4. You've Got a Friend            James Taylor         sim=0.92  energy 0.28, acoustic 0.68, tempo 92 bpm; fits genre
+```
+
+In the web app this appears as *"AI understood this as: **cozy bookshop**"* with the target numbers underneath. Run `python evaluate.py` with your key set to see real Groq results checked automatically.
+
 ## Reliability and Guardrails
 
-MatrixMix has four reliability mechanisms. Each one is shown below with an input, the behavior, and the result.
+MatrixMix has five reliability mechanisms. Each one is shown below with an input, the behavior, and the result.
 
 ### 1. Input validation (`clean_query`)
 
@@ -182,9 +211,24 @@ When the lists are valid but the matches are weak, the app still shows them with
 
 In normal use these thresholds are rarely reached (typical mood results score 0.85-0.96), so a warning means something unusual is happening.
 
+### 5. AI-output validation and automatic fallback (`validate_profile`, `search_mood`)
+
+The LLM is useful but not trustworthy, so its reply is checked before it is used, and the keyword parser is always the safety net.
+
+| Situation | Behavior | Result |
+|---|---|---|
+| No `GROQ_API_KEY` | AI checkbox is disabled | Keyword matching is used silently |
+| Groq times out, is rate-limited or is unreachable | Error caught, nothing crashes | Info: *"The AI parser was unavailable, so I used keyword matching instead."* and results still appear |
+| Model returns malformed JSON or a missing/non-numeric feature | Reply discarded | Falls back to keywords |
+| Model returns absurd numbers (for example `energy = 1e12`) | Every value is clamped to its valid range | Search still ranks safely, scores stay in 0-1 |
+| Model says the text is not about music (`is_music_request = false`) | AI result ignored | Keywords get a chance; if none match, *"I didn't recognize a mood..."* |
+| User text tries to inject instructions (`</request> SYSTEM: ...`) | Angle brackets are stripped and the text is sent only as data inside `<request>` tags; the prompt says to ignore instructions in it | The model's output can only ever become numbers that rank songs |
+| Same request typed again | Cached | No second API call |
+| More than 20 different AI requests in one session | AI is switched off for that session | Info message, keywords used (protects a public deployment's quota) |
+
 ### The evaluation script
 
-`python evaluate.py` runs the real system on a fixed set of inputs and prints a pass/fail report. It covers six popular songs in song mode, eight mood requests, and the guardrail cases above. Example output (shortened):
+`python evaluate.py` runs the real system on a fixed set of inputs and prints a pass/fail report. It covers six popular songs in song mode, eight mood requests, the guardrail cases above, and the AI path (with a fake client, plus live Groq calls when a key is set). Example output (shortened):
 
 ```text
 Loading catalog...
@@ -213,7 +257,14 @@ Catalog: 21,167 songs
   [PASS] self-check catches a bad list  (duplicate + unsorted list was flagged)
   [PASS] low-confidence warning fires on weak matches
 
-43/43 checks passed in 14.9s
+== AI parser (mocked) ==
+  [PASS] AI profile drives the ranking for a phrase the keywords don't know  (mean acousticness=0.71)
+  [PASS] AI results still pass the self-check
+  [PASS] API failure falls back to keywords with a note
+  [PASS] absurd model output is clamped and still ranks safely
+  [PASS] malformed model output falls back to keywords
+
+48/48 checks passed in 14.4s
 ```
 
 ## Design Decisions
@@ -221,7 +272,9 @@ Catalog: 21,167 songs
 - **Content-based, not collaborative.** There is no listening history in the datasets, so closeness is computed from song attributes. This also makes every result explainable.
 - **Metadata similarity for song mode.** Neither the Spotify CSV nor MusicOSet's metadata has audio features for song-to-song matching on every row, so song mode uses genre (weighted by rarity, so "vaporwave" counts more than "pop"), era, artist and popularity. *Trade-off:* it finds songs from the same scene and era, but not necessarily the same sound.
 - **Audio features for mood mode.** Mood needs real signal (energy, acousticness, tempo), so I merged MusicOSet's `acoustic_features.csv`. *Trade-off:* only the ~20,400 MusicOSet songs have features, so the extra Spotify-top-1000 songs are left out of mood results.
-- **Keyword matching instead of an LLM.** Mood words map to hand-written feature profiles. It is free, offline, deterministic and easy to test. An LLM would understand any phrasing but needs a paid API key, and a public app could run up a bill. *Trade-off:* it only understands the ~14 moods I defined, and the profile numbers are my own estimates, not learned from data.
+- **LLM first, keywords as the safety net.** Keyword matching alone only understands the ~14 moods I wrote, and its numbers are my own estimates. Groq's LLM understands any phrasing, so it is the default when a key is present. But the model is slower, can fail, and is not deterministic, so the keyword parser stays as a fallback, and the LLM's reply is validated and clamped before use. *Trade-off:* more moving parts and a dependency on an outside service; mitigated by the fallback, caching and a per-session cap.
+- **The LLM only picks numbers, never songs.** It returns target audio features, and the existing ranker does the retrieval. The model cannot invent songs that don't exist or recommend things outside the catalog, and every result is still explained by real feature values.
+- **Groq with a strict JSON schema.** Groq has a free tier and supports schema-constrained output on `openai/gpt-oss-20b` (changeable with `GROQ_MODEL`). *Trade-off:* free-tier rate limits and data-use terms apply; the key is read only from the environment, a git-ignored `.env`, or Streamlit secrets.
 - **Rule-based guardrails instead of a second model.** The self-check and filters are plain code, so they are fast, free and predictable. *Trade-off:* they catch broken lists and explicit songs, but cannot judge whether a song "feels" right. That still needs a human listening.
 - **Filter on by default.** Explicit songs are hidden unless the user turns the filter off, because recommendations for a cafe or a shared space should be safe by default. *Trade-off:* songs only in the Spotify top-1000 list have no flag, so they are not filtered.
 - **Hide a broken list instead of showing it.** If the self-check fails, showing nothing and explaining why is better than showing wrong results confidently.
@@ -231,7 +284,7 @@ Catalog: 21,167 songs
 
 ## Testing Summary
 
-**Automated tests: 113 passing** (`pytest`, about 40 seconds) and **43/43 evaluation checks** (`python evaluate.py`).
+**Automated tests: 159 passing** (`pytest`, about 40 seconds) and **48/48 evaluation checks** (`python evaluate.py`).
 
 | File | Tests | What it checks |
 |---|---|---|
@@ -239,6 +292,7 @@ Catalog: 21,167 songs
 | `tests/test_mood.py` | 28 | Mood keyword parsing (aliases, case, whole-word matching, no-match input), target blending, and ranking on a small hand-made catalog |
 | `tests/test_similar.py` | 26 | Song search (case, punctuation, blank input), recommendations on a small catalog (never returns the seed or its other versions, `k` respected, similar genre beats unrelated genre, "same era" labels), plus checks on the real ~21k-song catalog |
 | `tests/test_mood_real_data.py` | 22 | All 14 moods return 10 valid results on the real data, and the results really sound right (workout mean energy > 0.75, sleep < 0.35, and so on), results are deterministic |
+| `tests/test_llm_mood.py` | 46 | The AI parser with a fake Groq client: valid replies, clamping of out-of-range numbers, rejection of malformed or non-numeric replies, sanitizing of labels and genres, prompt-injection handling, API errors, caching, and the AI-first / keyword-fallback logic |
 | `tests/test_guardrails.py` | 35 | Input validation, every self-check rule (each one is shown to *fail* on a deliberately bad list), the low-confidence warning, and the explicit filter, with negative controls proving explicit songs do appear when the filter is off |
 
 The app itself was also driven end to end with Streamlit's test harness: a normal mood request, a normal song request, symbols-only input, blank-ish input, an unrecognized mood and a 300-character input all ran with no errors and showed the right message.
@@ -254,7 +308,8 @@ The app itself was also driven end to end with Streamlit's test harness: a norma
 
 **Gaps and what I learned**
 - **The tests check numbers, not taste.** They prove that "workout" results have high energy, not that a person would enjoy them. That still needs a human listening, which is why the previews are in the app.
-- **Outside services are not unit-tested.** The cover and preview lookups call Spotify and iTunes, so they were checked by hand.
+- **The live Groq call was not verified end to end.** No API key was available while building this, so the AI path is tested with a fake client, and the real SDK was only confirmed to reach Groq and fail cleanly (`401 Invalid API Key`) with a fake key. With your own key, `python evaluate.py` runs live checks.
+- **Other outside services are not unit-tested.** The cover and preview lookups call Spotify and iTunes, so they were checked by hand.
 - **The catalog leans old.** MusicOSet is full of classic soft rock and soul, so mood results skew toward older songs. Dataset coverage shapes recommendations as much as the algorithm does.
 - **Merging messy datasets is most of the work.** Only 156 of the Spotify top-1000 IDs overlapped with MusicOSet, and only ~55% of tracks had album art. Fallbacks (artist-name genre lookup, oEmbed covers) were needed.
 - **Looking at real output catches bugs numbers hide.** The same-artist flood and the score saturation were only obvious when I read actual results.
