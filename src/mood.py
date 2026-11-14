@@ -66,6 +66,7 @@ WEIGHTS = {
     "instrumentalness": (0.8, 1.0),
 }
 GENRE_BONUS = 0.10  # fraction of the max score added when a song's genres hit a hint
+POP_BONUS = 0.05
 MAX_PER_ARTIST = 2
 
 
@@ -109,7 +110,8 @@ def recommend_by_mood(cat: pd.DataFrame, text: str, k: int = 10):
     score /= total
 
     hint_hit = np.array([any(h in g or g in h for g in gs for h in hints) for gs in cat["genres"]])
-    score = score + GENRE_BONUS * hint_hit + 0.05 * (cat["popularity"].values / 100)
+    score = score + GENRE_BONUS * hint_hit + POP_BONUS * (cat["popularity"].values / 100)
+    score /= 1 + GENRE_BONUS + POP_BONUS  # scale to 0-1 so the displayed similarity is meaningful
     score[~has] = -1
 
     top, per_artist = [], {}

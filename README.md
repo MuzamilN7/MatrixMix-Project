@@ -1,155 +1,152 @@
-# 🎵 Music Recommender Simulation
+# 🎵 MatrixMix
 
-## Project Summary
+**Give it a song or describe a vibe, and it returns the 10 closest songs, with album covers, a short reason for each pick, and a 10-second preview.**
 
-In this project you will build and explain a small music recommender system.
+## Original Project (Modules 1-3)
 
-Your goal is to:
+MatrixMix grew out of my **Music Recommender Simulation** (model name *VibeMatch 1.0*). That project was a small content-based recommender over a hand-made catalog of 18 songs (`data/songs.csv`). A user described a favorite mood, a favorite genre, and target levels for energy, valence, tempo, danceability and acousticness. Each song earned points for a mood match (3), a genre match (2), and numeric closeness to the targets, and the top 5 were returned with a plain-language explanation of the points. It still lives in `src/recommender.py` and `src/main.py`.
 
-- Represent songs and a user "taste profile" as data
-- Design a scoring rule that turns that data into recommendations
-- Evaluate what your system gets right and wrong
-- Reflect on how this mirrors real world AI recommenders
+## Title and Summary
 
-Replace this paragraph with your own summary of what your version does.
+**MatrixMix** scales that idea up to real data and a real interface. It merges two datasets into a catalog of about 21,000 songs and offers two ways to find music:
 
----
+- **A song I like:** type a song, and get the 10 most similar songs.
+- **A mood or vibe:** type something like *"a chill song to play in a cafe"*, and get songs whose audio features fit that mood.
 
-## How The System Works
+**Why it matters:** recommenders decide what people hear, so it is useful to build one where every ranking can be explained. Every result shows *why* it was picked (shared genres, same era, or the exact energy / acousticness / tempo that matched), instead of being a black box.
 
-Real-world recommenders such as Spotify or YouTube combine two ideas. Collaborative filtering looks at what millions of similar listeners played, skipped, or saved. Content-based filtering compares the attributes of the songs themselves, such as audio features, genre, and mood, to what a listener has liked. They then score a huge catalog, rank it, and add diversity and freshness rules on top. My version is a small content-based recommender. It has no listening history from other users, so it will prioritize **how close a song's vibe is to what the user says they want**. Numeric features (energy) are scored by closeness to a target, not "higher is better". Mood and genre add points for exact matches, and numeric closeness fills the rest of a 10-point score.
+## Architecture Overview
 
-**Song features** (from `data/songs.csv`)
+The full diagram is in [`diagram/system_diagram.mmd`](diagram/system_diagram.mmd). In short, data flows **input → process → output**, with checks at the end:
 
-- Used in scoring: `mood`, `genre`, `energy`, `valence`, `tempo_bpm`, `danceability`, `acousticness`
-- Identifiers for display: `id`, `title`, `artist`
+1. **Input (Streamlit UI, `app.py`):** the user searches for a song or types a mood.
+2. **Data and catalog (`src/similar.py`):** three CSV sources (Spotify top 1000, MusicOSet metadata, MusicOSet acoustic features) are merged and de-duplicated into one catalog of ~21k songs.
+3. **Process:**
+   - *Retriever:* `search()` finds the song the user meant by title or artist.
+   - *Song recommender:* scores every song against the seed by genre overlap (55%), era (20%), same artist (15%) and popularity (10%).
+   - *Mood parser + recommender (`src/mood.py`):* turns keywords into target audio features, then ranks songs by closeness to that target.
+   - *Rules:* at most 2 songs per artist, and other versions of the seed song are hidden.
+4. **Output:** the top 10 songs, each with a similarity score and a "why" line, an album cover (MusicOSet image, falling back to Spotify oEmbed), and a 10-second preview (iTunes Search API).
+5. **Human and testing checks:** the user listens to the preview and judges the match; the developer spot-checks results and tunes weights and keywords; `pytest` and manual sample queries verify the code.
 
-**UserProfile features**
+## Setup Instructions
 
-- `favorite_mood` and `favorite_genre`: categorical targets that earn points on an exact match
-- `target_energy`, `target_valence`, `target_danceability`, `target_acousticness`: desired levels (0-1)
-- `target_tempo_bpm`: desired tempo in beats per minute
-
-**Algorithm Recipe**
-
-Each song gets a score out of 10. Every feature is scored from 0 to 1, multiplied by its weight, and summed.
-
-| Feature | Weight | Feature score (0 to 1) |
-|---|---|---|
-| mood | 3.0 | 1 if exact match, else 0 |
-| genre | 2.0 | 1 if exact match, else 0 |
-| energy | 2.0 | `1 - abs(song - target)` |
-| valence | 1.5 | `1 - abs(song - target)` |
-| tempo | 0.5 | `1 - abs(song - target) / 108` (dataset range is 60 to 168 bpm) |
-| danceability | 0.5 | `1 - abs(song - target)` |
-| acousticness | 0.5 | `1 - abs(song - target)` |
-
-- **Scoring rule (one song):** `score = sum(weight * feature_score)`. Numeric features use closeness to the target, so a user who wants 0.3 energy is not pushed toward 0.9.
-- **Ranking rule (all songs):** score every song, sort from highest to lowest, and return the top `k`, each with a short explanation of which features contributed most.
-
-**Why these weights**
-
-- **Mood (3) above genre (2):** mood describes what the listener wants right now, while genre is a standing taste. A chill jazz track can satisfy a chill lofi fan, but rarely the other way around.
-- **Valence (1.5) above tempo (0.5):** valence separates songs that energy cannot (Storm Runner and Afterglow Static have similar energy but opposite feel), while tempo mostly repeats energy.
-- **Categorical points total 5 of 10**, so numeric closeness can still beat a single lucky match.
-
-**Expected biases**
-
-- **Mood can overshadow good numeric fits.** Mood is worth 3 points, so a song with the right mood but the wrong energy and valence can outrank a song that fits every number but has a different mood label.
-- **Exact-match labels are brittle.** Related moods (chill, relaxed, focused) score 0 against each other, so Coffee Shop Stories gets no mood credit for a "chill" user even though it is a close fit.
-- **Genre favors the few well-represented genres.** Lofi has 3 songs and pop has 2, while most other genres have 1. A lofi fan gets several genre matches, and a metal or classical fan gets at most one, so their lists fill with weaker numeric matches.
-- **Small catalog, small pool.** With 18 songs, a niche profile will see the same few songs at the top.
-- **Closeness treats all directions equally.** A song 0.2 too high in energy scores the same as one 0.2 too low, even though a user may care more about one direction.
-- **Valence is only a proxy for mood.** An "angry" user may type a low valence target, which also rewards sad, quiet songs like Moonlit Sonata, even though their energy is nothing alike.
-
----
-
-## Getting Started
-
-### Setup
-
-1. Create a virtual environment (optional but recommended):
-
+1. **Clone the repo and enter the project folder:**
+   ```bash
+   git clone https://github.com/MuzamilN7/MatrixMix-Project.git
+   cd MatrixMix-Project
+   ```
+2. **Create a virtual environment (recommended):**
    ```bash
    python -m venv .venv
    source .venv/bin/activate      # Mac or Linux
    .venv\Scripts\activate         # Windows
+   ```
+3. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. **Check the data is in place.** The app expects these under `data/`:
+   - `spotify_top_1000_tracks.csv`
+   - `musicoset_metadata/` (songs, tracks, albums, artists CSVs)
+   - `musicoset_songfeatures/acoustic_features.csv`
 
-2. Install dependencies
+   `lyrics.csv` is not needed and is excluded from git because it is over GitHub's 100 MB limit.
+5. **Run the web app:**
+   ```bash
+   streamlit run app.py
+   ```
+   It opens at http://localhost:8501. The first load takes a few seconds while the catalog is built.
+6. **(Optional) Run the original command-line recommender:**
+   ```bash
+   python src/main.py
+   ```
 
-```bash
-pip install -r requirements.txt
-```
+Album covers and previews load from the internet, so you need a connection for those.
 
-3. Run the app:
+## Sample Interactions
 
-```bash
-python -m src.main
-```
+These are real outputs from the system.
 
-### Running Tests
+### 1. Song mode: input `Starboy` (The Weeknd, 2016)
 
-Run the starter tests with:
+| # | Song | Artist | Similarity | Why |
+|---|---|---|---|---|
+| 1 | Stargirl Interlude | The Weeknd | 0.98 | same artist; shared genres: canadian contemporary r&b, canadian pop, pop; same era (2016) |
+| 2 | Die For You | The Weeknd | 0.98 | same artist; shared genres: canadian contemporary r&b, canadian pop, pop; same era (2016) |
+| 3 | Scars To Your Beautiful | Alessia Cara | 0.60 | shared genres: canadian contemporary r&b, pop; same era (2016) |
+| 4 | Here | Alessia Cara | 0.59 | shared genres: canadian contemporary r&b, pop; same era (2016) |
+| 5 | Love Yourself | Justin Bieber | 0.53 | shared genres: canadian pop, pop; similar era (2015) |
 
-```bash
-pytest
-```
+### 2. Mood mode: input `a chill song to play in a cafe`
 
-You can add more tests in `tests/test_recommender.py`.
+Detected moods: **chill, cafe** (blended into a target of roughly energy 0.33, acousticness 0.65, tempo 92 bpm).
 
----
+| # | Song | Artist | Similarity | Why |
+|---|---|---|---|---|
+| 1 | Make It with You | Bread | 0.94 | energy 0.36, acoustic 0.66, tempo 84 bpm; fits genre |
+| 2 | Too Many Rivers | Brenda Lee | 0.94 | energy 0.30, acoustic 0.65, tempo 97 bpm; fits genre |
+| 3 | Those Good Old Dreams | Carpenters | 0.94 | energy 0.45, acoustic 0.66, tempo 92 bpm; fits genre |
+| 4 | Walk On the Wild Side | Lou Reed | 0.94 | energy 0.32, acoustic 0.68, tempo 105 bpm; fits genre |
+| 5 | Walk on By | Dionne Warwick | 0.94 | energy 0.33, acoustic 0.72, tempo 99 bpm; fits genre |
 
-## Sample Recommendation Output
+### 3. Mood mode: input `gym workout`
 
-Paste a sample of your recommender's output here as a text block so a reader can see what it produces:
+Detected mood: **workout** (target of roughly energy 0.90, acousticness 0.08, tempo 140 bpm).
 
-```
-# e.g.:
-# User profile: genre=indie, mood=chill, energy=low
-# Recommendations:
-#   1. ...
-#   2. ...
-#   3. ...
-```
+| # | Song | Artist | Similarity | Why |
+|---|---|---|---|---|
+| 1 | We Built This City | Starship | 0.96 | energy 0.91, acoustic 0.05, tempo 144 bpm; fits genre |
+| 2 | Stay Fly - Explicit Album Version | MJG, 8Ball, Three 6 Mafia, Young Buck | 0.96 | energy 0.88, acoustic 0.11, tempo 133 bpm; fits genre |
+| 3 | Good Feeling | Flo Rida | 0.96 | energy 0.89, acoustic 0.06, tempo 128 bpm; fits genre |
+| 4 | Some Like It Hot | The Power Station | 0.95 | energy 0.89, acoustic 0.09, tempo 126 bpm; fits genre |
+| 5 | Rolex | Ayo & Teo | 0.95 | energy 0.89, acoustic 0.08, tempo 145 bpm; fits genre |
 
-**Screenshot or video** *(optional)*: <!-- Insert a screenshot or demo video link here -->
+### 4. Unrecognized input: `xyz` in mood mode
 
----
+The app does not guess. It shows a hint: *"I didn't recognize a mood in that. Try words like chill, cafe, study, gym, party, sad, happy, road trip."*
 
-## Experiments You Tried
+(Each song in the web app also appears with its album cover and a **▶ Preview** button, which plays a 10-second snippet.)
 
-Use this section to document the experiments you ran. For example:
+## Design Decisions
 
-- What happened when you changed the weight on genre from 2.0 to 0.5
-- What happened when you added tempo or valence to the score
-- How did your system behave for different types of users
+- **Content-based, not collaborative.** There is no listening history in the datasets, so closeness is computed from song attributes. This also makes every result explainable.
+- **Metadata similarity for song mode.** Neither the Spotify CSV nor MusicOSet's metadata has audio features for song-to-song matching on every row, so song mode uses genre (weighted by rarity, so "vaporwave" counts more than "pop"), era, artist and popularity. *Trade-off:* it finds songs from the same scene and era, but not necessarily the same sound.
+- **Audio features for mood mode.** Mood needs real signal (energy, acousticness, tempo), so I merged MusicOSet's `acoustic_features.csv`. *Trade-off:* only the ~20,400 MusicOSet songs have features, so the extra Spotify-top-1000 songs are left out of mood results.
+- **Keyword matching instead of an LLM.** Mood words map to hand-written feature profiles. It is free, offline, deterministic and easy to debug. *Trade-off:* it only understands the ~14 moods I defined, and the profile numbers are my own estimates, not learned from data.
+- **Diversity rule.** Without a cap, "Starboy" returned ten songs by The Weeknd, so results are limited to 2 per artist. *Trade-off:* a fan who wants more from one artist cannot get it.
+- **Free, key-less APIs for extras.** Covers come from MusicOSet's `image_url` (~53% of songs) with Spotify oEmbed as a fallback; previews come from the iTunes Search API. Spotify removed its own preview URLs in 2024. *Trade-off:* the app needs internet, and a preview can be a different recording of the same song.
+- **Matrix theme.** The linear-algebra look (bracketed cards, `sim = 0.82`, feature column vectors) fits the name and shows the "score a vector against a matrix" idea behind the ranking.
 
----
+## Testing Summary
 
-## Limitations and Risks
+**Automated tests: 78 passing** (`pytest`, about 30 seconds)
 
-Summarize some limitations of your recommender.
+| File | Tests | What it checks |
+|---|---|---|
+| `tests/test_recommender.py` | 2 | The original VibeMatch `Recommender` class |
+| `tests/test_mood.py` | 28 | Mood keyword parsing (aliases, case, whole-word matching, no-match input), target blending, and ranking on a small hand-made catalog (chill vs. intense songs, songs without audio features are skipped, scores in 0-1, 2-per-artist cap, explanations present) |
+| `tests/test_similar.py` | 26 | Song search (case, punctuation, blank input), recommendations on a small catalog (never returns the seed or its other versions, `k` respected, similar genre beats unrelated genre, "same era" labels), plus checks on the real ~21k-song catalog: no duplicates, valid feature ranges, 5 popular songs found and recommended, 40 random songs all obey the rules |
+| `tests/test_mood_real_data.py` | 22 | All 14 moods return 10 valid results on the real data, and the results really sound right (workout mean energy > 0.75, sleep < 0.35, sad valence < 0.35, and so on), opposite moods return different songs, full sentences work, results are deterministic |
 
-Examples:
+Manual runs on sample queries (*Starboy*, *Heat Waves*, *gym workout*, *sad rainy night*, *chill cafe*) also gave sensible, explainable lists.
 
-- It only works on a tiny catalog
-- It does not understand lyrics or language
-- It might over favor one genre or mood
+**What didn't work at first (and the fix)**
+- All 10 results were by the same artist, so I added the 2-per-artist cap.
+- "Heat Waves (with iann dior)" was recommended for "Heat Waves", so I now strip `(with ...)` and `- Remastered` suffixes before comparing titles.
+- Every mood result showed `sim = 1.00` because bonuses pushed raw scores above 1 and the display capped them. Scores are now scaled to 0-1 (typical values 0.94-0.96).
+- "similar era" appeared for songs on the same album, so those now read "same era".
+- Writing the tests exposed three more bugs, now fixed: one song had `tempo = 0` (missing data stored as zero), a perfect match could score `1.0000001` from float rounding, and searching "Seed-Song" did not find "Seed Song" because hyphens were deleted instead of becoming spaces.
+- The old README command `python -m src.main` fails with an import error, so the setup steps use `python src/main.py`.
 
-You will go deeper on this in your model card.
-
----
+**Gaps and what I learned**
+- **Gaps in the tests:** the Streamlit page itself (`app.py`), the cover lookup and the preview lookup call outside services and are not unit-tested; they were checked by hand. The mood tests check that results *fit the numbers*, not that a person would enjoy them, which still needs a human listening.
+- **The catalog leans old.** MusicOSet is full of classic soft rock and soul, so mood results skew toward older songs. Dataset coverage shapes recommendations as much as the algorithm does.
+- **Merging messy datasets is most of the work.** Only 156 of the Spotify top-1000 IDs overlapped with MusicOSet, and only ~55% of tracks had album art. Fallbacks (artist-name genre lookup, oEmbed covers) were needed.
+- **Looking at real output catches bugs numbers hide.** The same-artist flood and the score saturation were only obvious when I read actual results.
 
 ## Reflection
 
-Read and complete `model_card.md`:
+This project taught me that a recommender is mostly decisions about data and definitions, not clever math. The ranking formula is a few lines; the hard parts were deciding what "close" means, what "chill" means in numbers, and what to do when the data is missing. Every one of those choices (weights, mood profiles, the artist cap) quietly shapes what users hear, which is why I made each result explain itself. It also showed me how an AI assistant fits into problem-solving: it is fast at building and iterating, but I still had to read the real outputs, notice what felt wrong, and decide what the system should value.
 
-[**Model Card**](model_card.md)
-
-Write 1 to 2 paragraphs here about what you learned:
-
-- about how recommenders turn data into predictions
-- about where bias or unfairness could show up in systems like this
-
-
-
+My graded responsible-AI reflection (how I collaborated with AI, a suggestion I accepted and one I rejected or revised, and the system's limitations) is in [`model_card.md`](model_card.md).

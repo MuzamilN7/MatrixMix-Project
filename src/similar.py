@@ -29,7 +29,9 @@ def _parse(value, default):
 
 
 def _norm(text: str) -> str:
-    return re.sub(r"[^a-z0-9 ]", "", str(text).lower()).strip()
+    """Lowercase, turn hyphens/slashes into spaces, drop other punctuation, collapse spaces."""
+    text = re.sub(r"[-/_]", " ", str(text).lower())
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", "", text)).strip()
 
 
 def build_catalog() -> pd.DataFrame:
@@ -75,6 +77,7 @@ def build_catalog() -> pd.DataFrame:
     # Audio features exist only for MusicOSet songs; others stay NaN (and are skipped by mood search).
     feats = pd.read_csv(FEATURES, sep="\t")[["song_id", *AUDIO_FEATURES]]
     cat = cat.merge(feats, left_on="spotify_id", right_on="song_id", how="left").drop(columns="song_id")
+    cat["tempo"] = cat["tempo"].replace(0, np.nan)  # a tempo of 0 is missing data, not a real tempo
     cat["key"] = cat["title"].map(_norm) + "|" + cat["artist"].map(_norm)
     cat = cat.drop_duplicates("key").reset_index(drop=True)
     cat["year"] = cat["year"].fillna(cat["year"].median())
@@ -123,6 +126,7 @@ class SongSimilarity:
         same_artist = np.array([1.0 if s & base else 0.0 for s in self.artist_sets])
 
         score = W_GENRE * genre + W_ARTIST * same_artist + W_YEAR * year + W_POP * pop
+        score = np.clip(score, 0.0, 1.0)  # float rounding can push a perfect match to 1.0000001
         score[index] = -1
         # Hide other copies of the same song (remasters, re-releases).
         score[(self.base_titles == self.base_titles.iloc[index]).values] = -1

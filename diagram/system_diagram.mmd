@@ -1,0 +1,70 @@
+flowchart TD
+    %% ---------- INPUT ----------
+    subgraph INPUT["1. Input (Streamlit UI - app.py)"]
+        U(["User"])
+        SONG["Song search<br/>e.g. 'Starboy'"]
+        MOODQ["Mood text<br/>e.g. 'chill song for a cafe'"]
+        U --> SONG
+        U --> MOODQ
+    end
+
+    %% ---------- DATA ----------
+    subgraph DATA["Datasets (CSV)"]
+        D1[("spotify_top_1000_tracks.csv")]
+        D2[("MusicOSet metadata<br/>songs, artists, albums, tracks")]
+        D3[("MusicOSet acoustic_features<br/>energy, valence, tempo, ...")]
+    end
+
+    %% ---------- PROCESS ----------
+    subgraph PROCESS["2. Process (src/)"]
+        CAT["Catalog builder<br/>similar.py: merge + dedupe<br/>~21k songs"]
+        RET["Retriever<br/>search song by title/artist"]
+        SIM["Song recommender<br/>genre + artist + era + popularity<br/>similarity score"]
+        PARSE["Mood parser<br/>mood.py: keywords to<br/>target audio features"]
+        MOODREC["Mood recommender<br/>closeness to target features"]
+        RULES["Rules: max 2 songs per artist,<br/>hide other versions of the seed song"]
+    end
+
+    %% ---------- OUTPUT ----------
+    subgraph OUTPUT["3. Output (Streamlit UI)"]
+        TOP["Top 10 songs<br/>score + 'why' explanation"]
+        COVER["Album cover<br/>MusicOSet image_url,<br/>else Spotify oEmbed"]
+        PREV["10-second preview<br/>iTunes Search API"]
+    end
+
+    %% ---------- CHECKS ----------
+    subgraph CHECKS["Human + testing checks"]
+        H1{{"HUMAN: user listens to preview,<br/>reads the 'why' line, judges the match"}}
+        H2{{"HUMAN: developer spot-checks results<br/>and tunes weights / mood keywords"}}
+        T1["TEST: pytest tests/<br/>recommender sorting + explanation"]
+        T2["TEST: manual runs on sample queries<br/>(Starboy, Heat Waves, gym, sad rainy night)"]
+    end
+
+    D1 --> CAT
+    D2 --> CAT
+    D3 --> CAT
+
+    SONG --> RET
+    RET --> SIM
+    CAT --> RET
+    CAT --> SIM
+    MOODQ --> PARSE
+    PARSE --> MOODREC
+    CAT --> MOODREC
+
+    SIM --> RULES
+    MOODREC --> RULES
+    RULES --> TOP
+    TOP --> COVER
+    TOP --> PREV
+
+    COVER --> H1
+    PREV --> H1
+    TOP --> H1
+    H1 -. "feedback: 'not what I wanted'" .-> H2
+    H2 -. "adjust scoring + keywords" .-> SIM
+    H2 -. "adjust scoring + keywords" .-> PARSE
+
+    T1 -. "verifies" .-> SIM
+    T2 -. "verifies" .-> TOP
+    T2 -. "verifies" .-> MOODREC
