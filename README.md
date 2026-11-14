@@ -25,8 +25,8 @@ MatrixMix grew out of my **Music Recommender Simulation** (model name *VibeMatch
 | **AI mood understanding (Groq LLM)** | `src/llm_mood.py`, `src/mood_search.py` | Sends the user's sentence to an LLM that returns a structured mood profile (strict JSON schema); the reply is validated and clamped, then ranked with the same engine. Falls back to keyword mode on any failure |
 | Streamlit UI | `app.py`, `style.css` | Matrix-themed site with album covers and 10-second previews |
 | **Guardrails** | `src/guardrails.py` | Input validation, an output self-check, a low-confidence warning, and an explicit-content filter |
-| **Evaluation harness** | `evaluate.py` | Runs 48 checks on sample inputs through the real system (plus live-Groq checks when a key is set) and reports pass/fail |
-| **Automated tests** | `tests/` | 159 pytest tests (the AI path uses a fake client, so no key is needed), including negative controls that prove the checks can fail |
+| **Evaluation harness** | `evaluate.py` | Runs 48 checks on sample inputs through the real system, plus 4 live-Groq checks when a key is set (52 total) and reports pass/fail |
+| **Automated tests** | `tests/` | 170 pytest tests (the AI path uses a fake client, so no key is needed), including negative controls that prove the checks can fail |
 
 ## Architecture Overview
 
@@ -89,12 +89,12 @@ The full diagram is in [`diagram/system_diagram.mmd`](diagram/system_diagram.mmd
    ```bash
    pytest
    ```
-   Expected result: `159 passed`.
+   Expected result: `170 passed`.
 8. **Run the evaluation script (about 15 seconds):**
    ```bash
    python evaluate.py
    ```
-   Expected result: `48/48 checks passed`. If `GROQ_API_KEY` is set, it also makes a few live Groq calls and adds those checks. The script exits with code 1 if any check fails.
+   Expected result: `48/48 checks passed` without a key, or `52/52` with one (it reads `GROQ_API_KEY` from the environment or your `.env` file, prints whether it found one, and then makes a few live Groq calls). The script exits with code 1 if any check fails.
 9. **(Optional) Run the original command-line recommender:**
    ```bash
    python src/main.py
@@ -144,18 +144,19 @@ Running each input twice gives the same list, so the system is consistent.
 
 ### 4. Mood mode with the AI parser: input `a cozy bookshop afternoon`
 
-The keyword parser alone does not know these words (`keywords only -> no mood recognized`). With the AI parser on, the LLM turns the sentence into a profile and the same ranker finds songs. *The output below was produced by the real catalog and ranker, with the LLM's reply simulated by a fake client (no API key was available when this README was written).*
+The keyword parser alone does not know these words (`keywords only -> no mood recognized`). With the AI parser on, the LLM turns the sentence into a profile and the same ranker finds songs. *This is real output from a live Groq call.*
 
 ```text
 source: ai | understood as: ['cozy bookshop']
-target: energy 0.30, valence 0.55, acousticness 0.70, danceability 0.50, instrumentalness 0.20, tempo 90 bpm
-1. It's Over                      Roy Orbison          sim=0.93  energy 0.32, acoustic 0.74, tempo 90 bpm; fits genre
-2. Honey                          Bobby Goldsboro      sim=0.92  energy 0.28, acoustic 0.67, tempo 93 bpm; fits genre
-3. Could I Have This Dance        Anne Murray          sim=0.92  energy 0.34, acoustic 0.78, tempo 87 bpm; fits genre
-4. You've Got a Friend            James Taylor         sim=0.92  energy 0.28, acoustic 0.68, tempo 92 bpm; fits genre
+target: energy 0.30, valence 0.60, acousticness 0.80, danceability 0.40, instrumentalness 0.10, tempo 80 bpm
+1. Could I Have This Dance        Anne Murray          sim=0.94  energy 0.34, acoustic 0.78, tempo 87 bpm; fits genre
+2. Honey                          Bobby Goldsboro      sim=0.93  energy 0.28, acoustic 0.67, tempo 93 bpm; fits genre
+3. Everything I Own               Bread                sim=0.93  energy 0.34, acoustic 0.73, tempo 79 bpm; fits genre
+4. I Won't Last A Day Without You Carpenters           sim=0.92  energy 0.22, acoustic 0.79, tempo 82 bpm; fits genre
+5. It's Over                      Roy Orbison          sim=0.92  energy 0.32, acoustic 0.74, tempo 90 bpm; fits genre
 ```
 
-In the web app this appears as *"AI understood this as: **cozy bookshop**"* with the target numbers underneath. Run `python evaluate.py` with your key set to see real Groq results checked automatically.
+In the web app this appears as *"AI understood this as: **cozy bookshop**"* with the target numbers underneath.
 
 ## Reliability and Guardrails
 
@@ -228,7 +229,7 @@ The LLM is useful but not trustworthy, so its reply is checked before it is used
 
 ### The evaluation script
 
-`python evaluate.py` runs the real system on a fixed set of inputs and prints a pass/fail report. It covers six popular songs in song mode, eight mood requests, the guardrail cases above, and the AI path (with a fake client, plus live Groq calls when a key is set). Example output (shortened):
+`python evaluate.py` runs the real system on a fixed set of inputs and prints a pass/fail report. It covers six popular songs in song mode, eight mood requests, the guardrail cases above, and the AI path (with a fake client, plus live Groq calls when a key is found). Example output (shortened):
 
 ```text
 Loading catalog...
@@ -264,7 +265,13 @@ Catalog: 21,167 songs
   [PASS] absurd model output is clamped and still ranks safely
   [PASS] malformed model output falls back to keywords
 
-48/48 checks passed in 14.4s
+== AI parser (live Groq) ==
+  [PASS] 'a cozy bookshop afternoon': mean acousticness > 0.4  (label=['cozy bookshop'], mean acousticness=0.78)
+  [PASS] 'something to run a marathon to': mean energy > 0.7  (label=['endurance run'], mean energy=0.79)
+  [PASS] 'falling asleep on a quiet night': mean energy < 0.4  (label=['sleepy calm'], mean energy=0.22)
+  [PASS] gibberish is not turned into recommendations
+
+52/52 checks passed in 18.8s
 ```
 
 ## Design Decisions
@@ -284,7 +291,7 @@ Catalog: 21,167 songs
 
 ## Testing Summary
 
-**Automated tests: 159 passing** (`pytest`, about 40 seconds) and **48/48 evaluation checks** (`python evaluate.py`).
+**Automated tests: 170 passing** (`pytest`, about 40 seconds) and **52/52 evaluation checks with a Groq key** (48/48 without one) (`python evaluate.py`).
 
 | File | Tests | What it checks |
 |---|---|---|
@@ -293,6 +300,7 @@ Catalog: 21,167 songs
 | `tests/test_similar.py` | 26 | Song search (case, punctuation, blank input), recommendations on a small catalog (never returns the seed or its other versions, `k` respected, similar genre beats unrelated genre, "same era" labels), plus checks on the real ~21k-song catalog |
 | `tests/test_mood_real_data.py` | 22 | All 14 moods return 10 valid results on the real data, and the results really sound right (workout mean energy > 0.75, sleep < 0.35, and so on), results are deterministic |
 | `tests/test_llm_mood.py` | 46 | The AI parser with a fake Groq client: valid replies, clamping of out-of-range numbers, rejection of malformed or non-numeric replies, sanitizing of labels and genres, prompt-injection handling, API errors, caching, and the AI-first / keyword-fallback logic |
+| `tests/test_env.py` | 11 | Loading the API key from a `.env` file: precedence of a real environment variable, quotes and spaces, a Windows byte-order mark, a missing or empty key, and an unreadable (UTF-16) file |
 | `tests/test_guardrails.py` | 35 | Input validation, every self-check rule (each one is shown to *fail* on a deliberately bad list), the low-confidence warning, and the explicit filter, with negative controls proving explicit songs do appear when the filter is off |
 
 The app itself was also driven end to end with Streamlit's test harness: a normal mood request, a normal song request, symbols-only input, blank-ish input, an unrecognized mood and a 300-character input all ran with no errors and showed the right message.
@@ -308,7 +316,8 @@ The app itself was also driven end to end with Streamlit's test harness: a norma
 
 **Gaps and what I learned**
 - **The tests check numbers, not taste.** They prove that "workout" results have high energy, not that a person would enjoy them. That still needs a human listening, which is why the previews are in the app.
-- **The live Groq call was not verified end to end.** No API key was available while building this, so the AI path is tested with a fake client, and the real SDK was only confirmed to reach Groq and fail cleanly (`401 Invalid API Key`) with a fake key. With your own key, `python evaluate.py` runs live checks.
+- **The live AI checks cover only a few phrasings.** With a real key, three requests (a bookshop, a marathon, falling asleep) and one gibberish input were checked against the real model, and all passed, including Groq accepting the strict JSON schema. That is a small sample; other phrasings, languages and edge cases are untested. The AI path is otherwise tested with a fake client.
+- **A bug that tests did not catch at first:** `evaluate.py` skipped the live checks because only the app read the `.env` file. Fixed by moving the loader into `src/env.py`, shared by both.
 - **Other outside services are not unit-tested.** The cover and preview lookups call Spotify and iTunes, so they were checked by hand.
 - **The catalog leans old.** MusicOSet is full of classic soft rock and soul, so mood results skew toward older songs. Dataset coverage shapes recommendations as much as the algorithm does.
 - **Merging messy datasets is most of the work.** Only 156 of the Spotify top-1000 IDs overlapped with MusicOSet, and only ~55% of tracks had album art. Fallbacks (artist-name genre lookup, oEmbed covers) were needed.

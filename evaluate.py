@@ -8,6 +8,7 @@ Exit code is 0 if every check passes, 1 otherwise, so it can be used in CI.
 import sys
 import time
 
+from src.env import load_env_key
 from src.guardrails import clean_query, confidence, verify_results
 from src.llm_mood import clear_cache, llm_available
 from src.mood import recommend_by_mood
@@ -189,6 +190,8 @@ def _make_weak_list():
 
 def main():
     start = time.time()
+    has_key = load_env_key("GROQ_API_KEY")  # picks the key up from the environment or a local .env file
+    print("Groq key:", "found (live AI checks will run)" if has_key else "not found (live AI checks will be skipped)")
     print("Loading catalog...")
     model = SongSimilarity()
     print(f"Catalog: {len(model.cat):,} songs\n")
