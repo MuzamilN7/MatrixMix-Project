@@ -92,7 +92,7 @@ def build_target(moods: list[str]) -> tuple[dict, list[str]]:
     return target, genres
 
 
-def recommend_by_mood(cat: pd.DataFrame, text: str, k: int = 10):
+def recommend_by_mood(cat: pd.DataFrame, text: str, k: int = 10, clean_only: bool = False):
     """Rank songs by closeness to the mood in `text`. Returns (moods, dataframe) — empty if no keyword matched."""
     moods = parse_mood(text)
     if not moods:
@@ -113,6 +113,8 @@ def recommend_by_mood(cat: pd.DataFrame, text: str, k: int = 10):
     score = score + GENRE_BONUS * hint_hit + POP_BONUS * (cat["popularity"].values / 100)
     score /= 1 + GENRE_BONUS + POP_BONUS  # scale to 0-1 so the displayed similarity is meaningful
     score[~has] = -1
+    if clean_only and "explicit" in cat.columns:
+        score[cat["explicit"].fillna(False).astype(bool).values] = -1
 
     top, per_artist = [], {}
     for i in np.argsort(-score):

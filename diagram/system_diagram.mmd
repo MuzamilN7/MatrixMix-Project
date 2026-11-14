@@ -4,57 +4,82 @@ flowchart TD
         U(["User"])
         SONG["Song search<br/>e.g. 'Starboy'"]
         MOODQ["Mood text<br/>e.g. 'chill song for a cafe'"]
+        FILT["'Hide explicit songs'<br/>toggle (on by default)"]
         U --> SONG
         U --> MOODQ
+        U --> FILT
+    end
+
+    %% ---------- INPUT GUARDRAIL ----------
+    subgraph GIN["2. Input guardrail (guardrails.py)"]
+        CLEAN["clean_query()<br/>strip control chars, collapse spaces,<br/>reject empty / symbols-only,<br/>truncate over 100 chars"]
+        REJECT["Show message,<br/>no search runs"]
+        CLEAN -- "unusable input" --> REJECT
     end
 
     %% ---------- DATA ----------
     subgraph DATA["Datasets (CSV)"]
         D1[("spotify_top_1000_tracks.csv")]
-        D2[("MusicOSet metadata<br/>songs, artists, albums, tracks")]
+        D2[("MusicOSet metadata<br/>songs, artists, albums, tracks<br/>+ explicit flag")]
         D3[("MusicOSet acoustic_features<br/>energy, valence, tempo, ...")]
     end
 
     %% ---------- PROCESS ----------
-    subgraph PROCESS["2. Process (src/)"]
+    subgraph PROCESS["3. Process (src/)"]
         CAT["Catalog builder<br/>similar.py: merge + dedupe<br/>~21k songs"]
         RET["Retriever<br/>search song by title/artist"]
         SIM["Song recommender<br/>genre + artist + era + popularity<br/>similarity score"]
         PARSE["Mood parser<br/>mood.py: keywords to<br/>target audio features"]
         MOODREC["Mood recommender<br/>closeness to target features"]
-        RULES["Rules: max 2 songs per artist,<br/>hide other versions of the seed song"]
+        RULES["Rules: max 2 songs per artist,<br/>hide other versions of the seed song,<br/>drop explicit songs if filter is on"]
+    end
+
+    %% ---------- OUTPUT GUARDRAIL ----------
+    subgraph GOUT["4. Output guardrails (guardrails.py)"]
+        SELF{"verify_results()<br/>self-check: no duplicates, artist cap,<br/>scores 0-1 and sorted, explanations,<br/>seed not repeated"}
+        BLOCK["List hidden,<br/>error explains why"]
+        CONF{"confidence()<br/>are the matches strong?"}
+        WARN["Show results with<br/>'low confidence' warning"]
+        SELF -- "rule broken" --> BLOCK
+        SELF -- "all rules hold" --> CONF
+        CONF -- "weak" --> WARN
     end
 
     %% ---------- OUTPUT ----------
-    subgraph OUTPUT["3. Output (Streamlit UI)"]
+    subgraph OUTPUT["5. Output (Streamlit UI)"]
         TOP["Top 10 songs<br/>score + 'why' explanation"]
         COVER["Album cover<br/>MusicOSet image_url,<br/>else Spotify oEmbed"]
         PREV["10-second preview<br/>iTunes Search API"]
     end
 
     %% ---------- CHECKS ----------
-    subgraph CHECKS["Human + testing checks"]
+    subgraph CHECKS["Human + automated checks"]
         H1{{"HUMAN: user listens to preview,<br/>reads the 'why' line, judges the match"}}
-        H2{{"HUMAN: developer spot-checks results<br/>and tunes weights / mood keywords"}}
-        T1["TEST: pytest tests/<br/>recommender sorting + explanation"]
-        T2["TEST: manual runs on sample queries<br/>(Starboy, Heat Waves, gym, sad rainy night)"]
+        H2{{"HUMAN: developer reads the evaluation report<br/>and tunes weights / mood keywords"}}
+        T1["TEST: pytest (113 tests)<br/>parser, recommenders, guardrails,<br/>real-data behavior, negative controls"]
+        T2["EVAL: python evaluate.py (43 checks)<br/>sample songs + moods + guardrail cases,<br/>pass/fail report"]
     end
 
     D1 --> CAT
     D2 --> CAT
     D3 --> CAT
 
-    SONG --> RET
+    SONG --> CLEAN
+    MOODQ --> CLEAN
+    CLEAN -- "clean text" --> RET
+    CLEAN -- "clean text" --> PARSE
     RET --> SIM
     CAT --> RET
     CAT --> SIM
-    MOODQ --> PARSE
     PARSE --> MOODREC
     CAT --> MOODREC
+    FILT --> RULES
 
     SIM --> RULES
     MOODREC --> RULES
-    RULES --> TOP
+    RULES --> SELF
+    CONF -- "strong" --> TOP
+    WARN --> TOP
     TOP --> COVER
     TOP --> PREV
 
@@ -65,6 +90,9 @@ flowchart TD
     H2 -. "adjust scoring + keywords" .-> SIM
     H2 -. "adjust scoring + keywords" .-> PARSE
 
-    T1 -. "verifies" .-> SIM
-    T2 -. "verifies" .-> TOP
-    T2 -. "verifies" .-> MOODREC
+    T1 -. "verifies" .-> CLEAN
+    T1 -. "verifies" .-> SELF
+    T1 -. "verifies" .-> RULES
+    T2 -. "runs real inputs through" .-> CLEAN
+    T2 -. "checks" .-> TOP
+    T2 -. "reports to" .-> H2

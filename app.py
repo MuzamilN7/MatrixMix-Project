@@ -10,6 +10,7 @@ import requests
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
+from guardrails import clean_query, confidence, verify_results  # noqa: E402
 from mood import recommend_by_mood  # noqa: E402
 from similar import SongSimilarity  # noqa: E402
 
@@ -47,7 +48,7 @@ def cover(row) -> str | None:
 def show_cover(row, width=None):
     url = cover(row)
     if url:
-        st.image(url, width=width, use_container_width=width is None)
+        st.image(url, width=width or "stretch")
     else:
         st.markdown("🎵 *no cover*")
 
@@ -76,7 +77,7 @@ def preview_url(title: str, artist: str) -> str | None:
 
 def preview_button(row, key: str):
     """A Preview button that, once clicked, plays a 10-second snippet under the cover."""
-    if st.button("▶ Preview", key=f"btn_{key}_{row['spotify_id']}", use_container_width=True):
+    if st.button("▶ Preview", key=f"btn_{key}_{row['spotify_id']}", width="stretch"):
         st.session_state["previewing"] = (key, row["spotify_id"])
     if st.session_state.get("previewing") == (key, row["spotify_id"]):
         url = preview_url(row["title"], row["artist"])
@@ -118,23 +119,52 @@ st.markdown(
     "<div class='mm-eq'>recommendations = argmax<sub>10</sub>( S · x ) &nbsp;where x = your song or mood vector</div>",
     unsafe_allow_html=True,
 )
+def run_guardrails(recs, mode, seed_title=None) -> bool:
+    """Self-check the results and warn about weak matches. Returns False if the list must not be shown."""
+    problems = verify_results(recs, k=10, seed_title=seed_title)
+    if problems:
+        st.error("Self-check failed, so I'm not showing these results: " + "; ".join(problems))
+        return False
+    note = confidence(recs, mode)
+    if note:
+        st.warning(note)
+    return True
+
+
+def checked_input(raw):
+    """Validate user text. Shows errors/warnings and returns the cleaned text, or None if unusable."""
+    qc = clean_query(raw)
+    if not qc.ok:
+        st.warning(qc.error)
+        return None
+    for w in qc.warnings:
+        st.info(w)
+    return qc.text
+
+
 mode = st.radio("Find music by", ["A song I like", "A mood or vibe"], horizontal=True)
+clean_only = st.checkbox("Hide explicit songs", value=True, help="Uses MusicOSet's explicit flag. Songs only in the Spotify top-1000 list have no flag.")
 
 if mode == "A mood or vibe":
     st.caption("Describe what you want, e.g. *a chill song to play in a cafe*, *gym workout*, *sad rainy night*.")
-    text = st.text_input("What are you in the mood for?", placeholder="a chill song to play in a cafe")
+    raw = st.text_input("What are you in the mood for?", placeholder="a chill song to play in a cafe")
+    text = checked_input(raw) if raw else None
     if text:
-        moods, recs = recommend_by_mood(model.cat, text, k=10)
-        if recs.empty:
+        moods, recs = recommend_by_mood(model.cat, text, k=10, clean_only=clean_only)
+        if not moods:
             st.warning("I didn't recognize a mood in that. Try words like chill, cafe, study, gym, party, sad, happy, road trip.")
+        elif recs.empty:
+            st.warning("No songs matched that mood with the current filters.")
         else:
             st.write("Detected: " + ", ".join(f"**{m}**" for m in moods))
-            show_grid(recs, "mood")
+            if run_guardrails(recs, "mood"):
+                show_grid(recs, "mood")
     st.stop()
 
 st.caption("Give me a song, I'll find 10 that are close to it.")
 
-query = st.text_input("Song name (optionally add the artist)", placeholder="e.g. Starboy")
+raw = st.text_input("Song name (optionally add the artist)", placeholder="e.g. Starboy")
+query = checked_input(raw) if raw else None
 if query:
     matches = model.search(query)
     if matches.empty:
@@ -158,5 +188,6 @@ if query:
 
     st.divider()
     st.subheader("Songs you might like")
-    recs = model.recommend(chosen, k=10)
-    show_grid(recs, "song")
+    recs = model.recommend(chosen, k=10, clean_only=clean_only)
+    if run_guardrails(recs, "song", seed_title=seed["title"]):
+        show_grid(recs, "song")

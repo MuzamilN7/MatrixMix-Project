@@ -581,3 +581,73 @@ PROFILE 15 extreme low energy+acoustic
       - Energy closeness (+0.95)
       - Valence closeness (+0.15)
       - Acousticness closeness (+0.45)
+
+---
+
+# MatrixMix: Responsible-AI Reflection
+
+*Sections 1-9 above document the original VibeMatch 1.0 (Modules 1-3). This part covers MatrixMix, the scaled-up version that uses about 21,000 real songs, a mood search, album covers and previews.*
+
+## 10. Limitations and Biases in MatrixMix
+
+**The data decides what gets recommended, and it is skewed.**
+- **Old music is over-represented.** The median song in the catalog is from 2006, and about 18% are from before 1990. Mood results lean toward classic soft rock and soul. "A chill song for a cafe" returns Bread, Brenda Lee and the Carpenters, not anything recent. A user who wants modern music gets worse results without any warning.
+- **Not every song can be found by every route.** Only about 96% of songs have audio features, so the Spotify-top-1000 songs that are not in MusicOSet can never appear in mood results. About 11% of songs have no genre at all, so song-to-song matching for them leans only on era, popularity and artist.
+- **Odd artists are everywhere.** The most common "artists" in the catalog are The Karaoke Channel (110 songs) and Glee Cast (91). A song-to-song match can surface a karaoke cover that is "similar" on paper but is not what a listener wants.
+- **Genres belong to artists, not songs.** Every song inherits all of its artist's genres. A ballad by a rock band is treated as rock, and a band that changed style is stuck with every label.
+- **Popularity and fame create a rich-get-richer effect.** The score gives popularity 10% of the weight in song mode and a small tie-break in mood mode. Famous artists get recommended more, and lesser-known artists get fewer chances.
+- **Similarity is only metadata.** Song mode compares genre, artist, era and popularity, not how the song sounds, so it can match songs from the same scene that sound nothing alike.
+
+**The mood system is hand-written and narrow.**
+- Only 14 moods are understood. Anything else ("nostalgic", "lonely road at 3am") returns nothing instead of a best guess.
+- The numbers in each mood profile (for example "chill = energy 0.30, acousticness 0.60") are my own estimates, not learned from listeners. They reflect one person's idea of what "chill" or "workout" sounds like, and other cultures or tastes may disagree.
+- Keywords like "love", "date" and "dinner" all map to "romantic", and "car" or "drive" map to "road trip", which will sometimes fire on words that are not really about mood.
+
+**Missing content signals.**
+- The system does not understand lyrics or language. It also found explicit songs at first: a "gym workout" result included "Stay Fly - Explicit Album Version". I fixed this by carrying MusicOSet's `explicit` flag into the catalog and adding a "Hide explicit songs" filter that is on by default. The remaining gap is that the flag only exists for MusicOSet songs, so songs that appear only in the Spotify top-1000 list are never filtered, and the flag cannot catch clean-labeled songs with mature themes.
+- Covers and previews depend on outside services. About 47% of covers come from a fallback lookup, and a preview can be a different recording of the same song or can be missing.
+
+## 11. Could the AI Be Misused, and How Would I Prevent It?
+
+MatrixMix is low-stakes. It suggests songs, it makes no decisions about people, and it stores nothing about users. Even so, I can see a few ways it could cause harm.
+
+- **Playing inappropriate content in public.** Someone could use mood search to build a playlist for a cafe, a classroom or a kids' event and get explicit songs. *Prevention (done):* the catalog now carries the dataset's `explicit` flag, and a "Hide explicit songs" filter is on by default. An evaluation check confirms that none of the 14 moods return an explicit song with the filter on, and a negative control confirms explicit songs do appear with it off.
+- **Showing broken or low-quality results with confidence.** A bug could make the app show duplicates, too many songs by one artist, or weak matches as if they were good. *Prevention (done):* every list is self-checked before it is shown and is hidden with an explanation if a rule fails, and weak matches get a "low confidence" warning. Typed input is validated and cleaned so that empty, symbols-only or very long text cannot reach the search.
+- **Skewing what people hear.** If a real service used this, the popularity bonus and the old-music bias would steer listeners toward famous and older artists and make it harder for new or small artists to be discovered. *Prevention:* cap the popularity weight, add a "discover newer / lesser-known" option, and keep the 2-songs-per-artist rule, which already spreads results out.
+- **Overtrusting the "match" percentage.** A score like `sim = 0.94` looks precise, but it only measures closeness on a few numbers. I made every result show a plain-language reason so that users can see what the score means and disagree with it.
+- **Scraping or hammering the free services.** The app calls the Spotify oEmbed and iTunes endpoints. Results are cached and calls happen only when a user clicks a preview or a cover is missing, so it does not bulk-download. A public deployment should keep that behavior and respect each service's terms.
+- **Privacy.** The app does not store searches or user data. If someone later added accounts or listening history, that data would need consent and clear limits on what it can be used for.
+
+## 12. What Surprised Me While Testing Reliability
+
+- **The first results were technically correct and still bad.** Searching "Starboy" returned ten songs, all by The Weeknd. Every one scored high, and the system was "working," but the list was useless. I would not have seen this from a number. I had to read the actual output, which led to the 2-songs-per-artist rule.
+- **A perfect score hid a problem.** Every mood result showed `sim = 1.00`. The bonuses pushed raw scores above 1 and the display capped them, so all ten songs looked equally perfect. After scaling, scores range from 0.94 to 0.96, which is honest.
+- **Real data is messier than it looks.** Only 156 of the 1,000 Spotify songs matched MusicOSet, only about 55% of tracks had album art, and one song had a tempo of exactly 0. I expected merging two CSVs to be easy, and it was most of the work.
+- **Writing tests found bugs that manual checks missed.** I had tried many queries by hand and they looked fine. The automated tests then found three more problems: the tempo of 0, a score of `1.0000001` from float rounding, and "Seed-Song" not matching "Seed Song" because hyphens were deleted. The suite now has 113 tests plus a 43-check evaluation script, and all pass, but the lesson is that "it looked right to me" was not enough. I also added negative controls (for example, confirming that explicit songs *do* appear when the filter is off) because a test that can never fail proves nothing.
+- **Fitting the numbers is not the same as sounding right.** The tests prove that "workout" results have high energy and "sleep" results have low energy. They cannot prove that a person would enjoy the songs. That judgment still needs a human, which is why the previews are in the app.
+
+## 13. My Collaboration with AI
+
+I used Claude as a coding partner for most of MatrixMix. I set the goal and made the decisions, and the AI wrote and ran code, found problems in its own output and explained trade-offs. I also kept a hand on the controls. For example, when the AI started to run commands across my git folders without explaining why, I stopped it and asked what it planned to do, and only let it continue once the plan was clear.
+
+**A suggestion I accepted: using MusicOSet's real audio features for mood search.**
+When I asked how to make recommendations "based on mood more," the AI pointed out that my datasets had no mood or audio data at all, so "chill" had nothing to match against. It offered three routes and said real audio features (energy, valence, acousticness, tempo) would be the biggest improvement, and that MusicOSet ships them in a separate folder I had not downloaded. I added the `musicoset_songfeatures` folder. This worked well because "chill" became something measurable, and it lets the app show *why* a song fits ("energy 0.36, acoustic 0.66, tempo 84 bpm"). That explanation is the part I like best about the system.
+
+**A suggestion I did not accept as written: having Claude turn free text into a mood profile.**
+The AI's third option was to send the user's sentence ("a chill song to play in a cafe") to an LLM through the Claude API, which would return a structured profile. It would handle any phrasing, including words I never listed. I chose keyword matching only. It was the right-sized choice for this project: the keyword version is free, works offline, needs no API key, gives the same answer every time, and is easy to test and debug. Cost was a real factor: when I asked whether using the API key would cost money, the answer was yes (it is pay-per-use, separate from a Claude subscription), and a public app could be spammed into running up a bill. It also let me write real tests for the parser. I accepted the trade-off, which is that it only understands the 14 moods I defined and shows a hint when it does not recognize a word. The LLM version is a possible future upgrade, listed below.
+
+**Where the AI was wrong, and how it got caught.** The AI also made mistakes that I only found because I checked its work:
+- Its first recommender returned ten songs by one artist.
+- Its mood scores all showed 1.00.
+- The `python -m src.main` command in the old README did not run.
+- At one point it mixed a shell command into a git commit message.
+
+Each time, reading real output, running the tests or looking at the git history caught it. I do not treat the AI's output as correct until it has been run and checked.
+
+## 14. What I Would Do Next
+
+- Find explicit-content flags for the songs that only appear in the Spotify top-1000 list, which are currently unfiltered.
+- Use the audio features in song-to-song mode too, so similar songs also sound similar.
+- Add a recency control so users can ask for newer music, and down-rank karaoke and cast-recording "artists."
+- Possibly add the LLM free-text option, keeping the keyword version as a fallback when there is no API key.
+- Add automated tests for the cover and preview lookups (the page itself was driven with Streamlit's test harness, but the outside services were only checked by hand), and collect feedback from real listeners so the mood profiles are based on what people say, not my guesses.

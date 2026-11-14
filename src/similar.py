@@ -60,7 +60,7 @@ def build_catalog() -> pd.DataFrame:
     m = m.merge(albums[["album_id", "album", "image_url"]], on="album_id", how="left")
     m["year"] = pd.to_datetime(m["release_date"], errors="coerce").dt.year
     ms = m.rename(columns={"song_name": "title", "song_id": "spotify_id"})[
-        ["title", "artist", "genres", "year", "popularity", "album", "image_url", "spotify_id"]
+        ["title", "artist", "genres", "year", "popularity", "album", "image_url", "spotify_id", "explicit"]
     ]
 
     # --- Spotify top 1000 (adds songs MusicOSet lacks; genres borrowed from artist-name match)
@@ -68,8 +68,9 @@ def build_catalog() -> pd.DataFrame:
     top["genres"] = top["artist"].map(lambda a: genres_by_name.get(_norm(a.split(",")[0]), []))
     top["year"] = pd.to_datetime(top["release_date"], errors="coerce").dt.year
     top["image_url"] = None
+    top["explicit"] = False  # the Spotify CSV has no explicit flag; treated as unknown (not filtered)
     tp = top.rename(columns={"track_name": "title", "id": "spotify_id", "album": "album"})[
-        ["title", "artist", "genres", "year", "popularity", "album", "image_url", "spotify_id"]
+        ["title", "artist", "genres", "year", "popularity", "album", "image_url", "spotify_id", "explicit"]
     ]
 
     cat = pd.concat([ms, tp], ignore_index=True)
@@ -80,6 +81,7 @@ def build_catalog() -> pd.DataFrame:
     cat["tempo"] = cat["tempo"].replace(0, np.nan)  # a tempo of 0 is missing data, not a real tempo
     cat["key"] = cat["title"].map(_norm) + "|" + cat["artist"].map(_norm)
     cat = cat.drop_duplicates("key").reset_index(drop=True)
+    cat["explicit"] = cat["explicit"].fillna(False).astype(bool)
     cat["year"] = cat["year"].fillna(cat["year"].median())
     cat["popularity"] = cat["popularity"].fillna(cat["popularity"].median())
     return cat
@@ -116,8 +118,11 @@ class SongSimilarity:
         hits = self.cat[hay.str.contains(q, regex=False)]
         return hits.sort_values("popularity", ascending=False).head(limit)
 
-    def recommend(self, index: int, k: int = 10) -> pd.DataFrame:
-        """Return the k songs most similar to catalog row `index`, with a `score` column."""
+    def recommend(self, index: int, k: int = 10, clean_only: bool = False) -> pd.DataFrame:
+        """Return the k songs most similar to catalog row `index`, with a `score` column.
+
+        clean_only=True hides songs flagged explicit in MusicOSet.
+        """
         c = self.cat
         genre = self.genre_mat @ self.genre_mat[index]
         year = np.clip(1 - np.abs(c["year"].values - c["year"].iloc[index]) / YEAR_SPAN, 0, 1)
@@ -128,6 +133,8 @@ class SongSimilarity:
         score = W_GENRE * genre + W_ARTIST * same_artist + W_YEAR * year + W_POP * pop
         score = np.clip(score, 0.0, 1.0)  # float rounding can push a perfect match to 1.0000001
         score[index] = -1
+        if clean_only and "explicit" in self.cat.columns:
+            score[self.cat["explicit"].values] = -1
         # Hide other copies of the same song (remasters, re-releases).
         score[(self.base_titles == self.base_titles.iloc[index]).values] = -1
 
