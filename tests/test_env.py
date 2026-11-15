@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from src.env import load_env_key
+from src.env import find_key, load_env_key
 
 
 @pytest.fixture(autouse=True)
@@ -51,3 +51,23 @@ def test_missing_file_returns_false(tmp_path):
 def test_unreadable_encoding_returns_false_instead_of_crashing(tmp_path):
     # PowerShell's `echo ... > .env` writes UTF-16, which is not valid UTF-8.
     assert load_env_key(path=write(tmp_path, "GROQ_API_KEY=abc\n", encoding="utf-16")) is False
+
+
+# ---------- find_key (Streamlit secrets lookup) ----------
+
+def test_find_key_at_top_level():
+    assert find_key({"GROQ_API_KEY": "abc"}) == "abc"
+
+
+def test_find_key_inside_a_section():
+    assert find_key({"general": {"GROQ_API_KEY": "abc"}}) == "abc"
+
+
+def test_find_key_is_case_and_space_tolerant_and_strips_quotes():
+    assert find_key({" groq_api_key ": ' "abc" '}) == "abc"
+
+
+def test_find_key_ignores_other_keys_and_empty_values():
+    assert find_key({"OTHER": "x", "GROQ_API_KEY": ""}) is None
+    assert find_key({}) is None
+    assert find_key(None) is None

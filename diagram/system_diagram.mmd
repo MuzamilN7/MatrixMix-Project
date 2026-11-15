@@ -58,7 +58,7 @@ flowchart TD
     subgraph CHECKS["Human + automated checks"]
         H1{{"HUMAN: user listens to preview,<br/>reads the 'why' line, judges the match"}}
         H2{{"HUMAN: developer reads the evaluation report<br/>and tunes weights / mood keywords"}}
-        T1["TEST: pytest (170 tests)<br/>parsers, recommenders, guardrails,<br/>AI path with a fake Groq client,<br/>real-data behavior, negative controls"]
+        T1["TEST: pytest (174 tests)<br/>parsers, recommenders, guardrails,<br/>AI path with a fake Groq client,<br/>real-data behavior, negative controls"]
         T2["EVAL: python evaluate.py (48 checks, 52 with a key)<br/>sample songs + moods + guardrail cases<br/>+ AI path (live Groq if key set),<br/>pass/fail report"]
     end
 

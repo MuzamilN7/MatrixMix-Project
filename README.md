@@ -26,7 +26,7 @@ MatrixMix grew out of my **Music Recommender Simulation** (model name *VibeMatch
 | Streamlit UI | `app.py`, `style.css` | Matrix-themed site with album covers and 10-second previews |
 | **Guardrails** | `src/guardrails.py` | Input validation, an output self-check, a low-confidence warning, and an explicit-content filter |
 | **Evaluation harness** | `evaluate.py` | Runs 48 checks on sample inputs through the real system, plus 4 live-Groq checks when a key is set (52 total) and reports pass/fail |
-| **Automated tests** | `tests/` | 170 pytest tests (the AI path uses a fake client, so no key is needed), including negative controls that prove the checks can fail |
+| **Automated tests** | `tests/` | 174 pytest tests (the AI path uses a fake client, so no key is needed), including negative controls that prove the checks can fail |
 
 ## Architecture Overview
 
@@ -89,7 +89,7 @@ The full diagram is in [`diagram/system_diagram.mmd`](diagram/system_diagram.mmd
    ```bash
    pytest
    ```
-   Expected result: `170 passed`.
+   Expected result: `174 passed`.
 8. **Run the evaluation script (about 15 seconds):**
    ```bash
    python evaluate.py
@@ -291,7 +291,7 @@ Catalog: 21,167 songs
 
 ## Testing Summary
 
-**Automated tests: 170 passing** (`pytest`, about 40 seconds) and **52/52 evaluation checks with a Groq key** (48/48 without one) (`python evaluate.py`).
+**Automated tests: 174 passing** (`pytest`, about 40 seconds) and **52/52 evaluation checks with a Groq key** (48/48 without one) (`python evaluate.py`).
 
 | File | Tests | What it checks |
 |---|---|---|
@@ -300,7 +300,7 @@ Catalog: 21,167 songs
 | `tests/test_similar.py` | 26 | Song search (case, punctuation, blank input), recommendations on a small catalog (never returns the seed or its other versions, `k` respected, similar genre beats unrelated genre, "same era" labels), plus checks on the real ~21k-song catalog |
 | `tests/test_mood_real_data.py` | 22 | All 14 moods return 10 valid results on the real data, and the results really sound right (workout mean energy > 0.75, sleep < 0.35, and so on), results are deterministic |
 | `tests/test_llm_mood.py` | 46 | The AI parser with a fake Groq client: valid replies, clamping of out-of-range numbers, rejection of malformed or non-numeric replies, sanitizing of labels and genres, prompt-injection handling, API errors, caching, and the AI-first / keyword-fallback logic |
-| `tests/test_env.py` | 11 | Loading the API key from a `.env` file: precedence of a real environment variable, quotes and spaces, a Windows byte-order mark, a missing or empty key, and an unreadable (UTF-16) file |
+| `tests/test_env.py` | 15 | Finding the API key (top-level, inside a section, any letter case, quoted, in Streamlit secrets) and loading it from a `.env` file: precedence of a real environment variable, quotes and spaces, a Windows byte-order mark, a missing or empty key, and an unreadable (UTF-16) file |
 | `tests/test_guardrails.py` | 35 | Input validation, every self-check rule (each one is shown to *fail* on a deliberately bad list), the low-confidence warning, and the explicit filter, with negative controls proving explicit songs do appear when the filter is off |
 
 The app itself was also driven end to end with Streamlit's test harness: a normal mood request, a normal song request, symbols-only input, blank-ish input, an unrecognized mood and a 300-character input all ran with no errors and showed the right message.

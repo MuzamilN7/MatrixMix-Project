@@ -11,7 +11,7 @@ import requests
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
-from env import load_env_key  # noqa: E402
+from env import find_key, load_env_key  # noqa: E402
 from guardrails import clean_query, confidence, verify_results  # noqa: E402
 from llm_mood import MODEL, llm_available  # noqa: E402
 from mood_search import search_mood  # noqa: E402
@@ -29,10 +29,11 @@ def load_api_key() -> None:
     if os.environ.get("GROQ_API_KEY"):
         return
     try:
-        if "GROQ_API_KEY" in st.secrets:
-            os.environ["GROQ_API_KEY"] = str(st.secrets["GROQ_API_KEY"])
+        found = find_key(st.secrets.to_dict(), "GROQ_API_KEY")
+        if found:
+            os.environ["GROQ_API_KEY"] = found
             return
-    except Exception:  # no secrets file configured
+    except Exception:  # no secrets configured
         pass
     load_env_key("GROQ_API_KEY")
 

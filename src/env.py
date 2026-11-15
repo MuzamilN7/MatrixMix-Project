@@ -28,3 +28,25 @@ def load_env_key(name: str = "GROQ_API_KEY", path: Path | None = None) -> bool:
                 os.environ[name] = value
                 return True
     return False
+
+
+def find_key(mapping, name: str = "GROQ_API_KEY") -> str | None:
+    """Find `name` in a (possibly nested) mapping such as Streamlit secrets.
+
+    Tolerates the common Streamlit Cloud mistakes: the key pasted under a [section] header,
+    different letter case, and extra spaces or quotes around the value.
+    """
+    try:
+        items = list(mapping.items())
+    except AttributeError:
+        return None
+    for key, value in items:
+        if str(key).strip().upper() == name:
+            cleaned = str(value).strip().strip("\"'")
+            if cleaned:
+                return cleaned
+        elif hasattr(value, "items"):
+            found = find_key(value, name)
+            if found:
+                return found
+    return None

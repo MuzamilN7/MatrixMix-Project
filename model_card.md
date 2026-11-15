@@ -1,5 +1,8 @@
 # 🎧 Model Card: Music Recommender Simulation
 
+> **Which part to read:** this model card began as the Module 1-3 card for **VibeMatch 1.0** (sections 1-9 below, kept for the record). The current project, **MatrixMix**, is documented in the **"MatrixMix: Responsible-AI Reflection"** part starting at section 10: limitations and biases, misuse and prevention, what surprised me while testing, how I worked with AI (one suggestion accepted, one revised), and what I would do next.
+
+
 ## 1. Model Name  
 
 **VibeMatch 1.0**
@@ -632,7 +635,7 @@ MatrixMix is low-stakes. It suggests songs, it makes no decisions about people, 
 - **The first results were technically correct and still bad.** Searching "Starboy" returned ten songs, all by The Weeknd. Every one scored high, and the system was "working," but the list was useless. I would not have seen this from a number. I had to read the actual output, which led to the 2-songs-per-artist rule.
 - **A perfect score hid a problem.** Every mood result showed `sim = 1.00`. The bonuses pushed raw scores above 1 and the display capped them, so all ten songs looked equally perfect. After scaling, scores range from 0.94 to 0.96, which is honest.
 - **Real data is messier than it looks.** Only 156 of the 1,000 Spotify songs matched MusicOSet, only about 55% of tracks had album art, and one song had a tempo of exactly 0. I expected merging two CSVs to be easy, and it was most of the work.
-- **Writing tests found bugs that manual checks missed.** I had tried many queries by hand and they looked fine. The automated tests then found three more problems: the tempo of 0, a score of `1.0000001` from float rounding, and "Seed-Song" not matching "Seed Song" because hyphens were deleted. The suite now has 170 tests plus a 52-check evaluation script, and all pass, but the lesson is that "it looked right to me" was not enough. I also added negative controls (for example, confirming that explicit songs *do* appear when the filter is off) because a test that can never fail proves nothing.
+- **Writing tests found bugs that manual checks missed.** I had tried many queries by hand and they looked fine. The automated tests then found three more problems: the tempo of 0, a score of `1.0000001` from float rounding, and "Seed-Song" not matching "Seed Song" because hyphens were deleted. The suite now has 174 tests plus a 52-check evaluation script, and all pass, but the lesson is that "it looked right to me" was not enough. I also added negative controls (for example, confirming that explicit songs *do* appear when the filter is off) because a test that can never fail proves nothing.
 - **Fitting the numbers is not the same as sounding right.** The tests prove that "workout" results have high energy and "sleep" results have low energy. They cannot prove that a person would enjoy the songs. That judgment still needs a human, which is why the previews are in the app.
 
 ## 13. My Collaboration with AI
